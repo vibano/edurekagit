@@ -1,0 +1,207 @@
+CREATE OR REPLACE FUNCTION npas.ilnpproc$deletewtn(
+     IN wtnin CHARACTER, 
+     INOUT errnum NUMERIC, 
+     IN wtn_ind CHARACTER, 
+     INOUT errmsg TEXT)
+AS
+$BODY$
+DECLARE
+    Wtn_Curr_Ind ILNP_RESALE_LNP_WTNS.ILNP_RESALE_LNP_IND%TYPE;
+    Ported_Lines_Count DOUBLE PRECISION;
+    wtn_does_not_exist aws_oracle_ext.ora_exception := 'wtn_does_not_exist';
+    wtn_exists_diff_type aws_oracle_ext.ora_exception := 'wtn_exists_diff_type';
+    ptns_exist aws_oracle_ext.ora_exception := 'ptns_exist';
+BEGIN
+    /* Initialize all the variables */
+    ErrNum := 0;
+    ErrMsg := NULL;
+    Ported_Lines_Count := 0;
+    /* Check to see if the working telephone number passed is present */
+    /* in the ILNP_RESALE_LNP_WTNS table. */
+    BEGIN
+        SELECT
+            ILNP_RESALE_LNP_IND
+            INTO STRICT Wtn_Curr_Ind
+            FROM ILNP_RESALE_LNP_WTNS
+            WHERE aws_oracle_ext.substr(WtnIn, 1, 3) = npas.npa::TEXT AND aws_oracle_ext.substr(WtnIn, 4, 3) = NXX AND aws_oracle_ext.TO_NUMBER(aws_oracle_ext.substr(WtnIn, 7)) = LINE;
+        /* if the indicators do not match then raise error for wtn exists of different type */
+        IF UPPER(Wtn_Curr_Ind::TEXT) != UPPER(Wtn_Ind) THEN
+            RAISE USING detail = wtn_exists_diff_type, hint = 1;
+        END IF;
+        EXCEPTION
+            WHEN no_data_found THEN
+                RAISE USING detail = wtn_does_not_exist, hint = 1;
+    END;
+    /* Check to see if the working telephone number passed is present */
+    /* in the ILNP_PORTED_LINES table. */
+    BEGIN
+        SELECT
+            COUNT(*)
+            INTO STRICT Ported_Lines_Count
+            FROM ILNP_PORTED_LINES
+            WHERE aws_oracle_ext.substr(WtnIn, 1, 3) = NPA_FK AND aws_oracle_ext.substr(WtnIn, 4, 3) = NXX_FK AND aws_oracle_ext.TO_NUMBER(aws_oracle_ext.substr(WtnIn, 7)) = LINE_FK;
+        /* if there are Ptns then raise the error for Ptns existing */
+        IF Ported_Lines_Count != 0 THEN
+            RAISE USING detail = ptns_exist, hint = 1;
+        END IF;
+    END;
+
+    BEGIN
+        DELETE FROM ILNP_RESALE_LNP_WTNS
+            WHERE aws_oracle_ext.substr(WtnIn, 1, 3) = npas.npa::TEXT AND aws_oracle_ext.substr(WtnIn, 4, 3) = NXX AND aws_oracle_ext.TO_NUMBER(aws_oracle_ext.substr(WtnIn, 7)) = LINE;
+    END;
+    /* Exception for Wtn does not exist */
+    EXCEPTION
+        WHEN raise_exception THEN
+            DECLARE
+                exc$name CHARACTER VARYING;
+                exc$code CHARACTER VARYING;
+            BEGIN
+                GET STACKED DIAGNOSTICS exc$name := pg_exception_detail,
+                    exc$code := pg_exception_hint;
+
+                IF exc$name = wtn_does_not_exist THEN
+                    ErrNum := - 2;
+                    ErrMsg := CONCAT_WS('', 'Working telephone number: ', WtnIn, ' does not exist ');
+                END IF;
+            END;
+        /* Exception for Wtn exists of the different type */
+        WHEN raise_exception THEN
+            DECLARE
+                exc$name CHARACTER VARYING;
+                exc$code CHARACTER VARYING;
+            BEGIN
+                GET STACKED DIAGNOSTICS exc$name := pg_exception_detail,
+                    exc$code := pg_exception_hint;
+
+                IF exc$name = wtn_exists_diff_type THEN
+                    ErrNum := - 3;
+                    ErrMsg := CONCAT_WS('', 'Working telephone number: ', WtnIn, ' of other type already exists ');
+                END IF;
+            END;
+        /* Exception for Wtn exists of the different type */
+        WHEN raise_exception THEN
+            DECLARE
+                exc$name CHARACTER VARYING;
+                exc$code CHARACTER VARYING;
+            BEGIN
+                GET STACKED DIAGNOSTICS exc$name := pg_exception_detail,
+                    exc$code := pg_exception_hint;
+
+                IF exc$name = ptns_exist THEN
+                    ErrNum := - 4;
+                    ErrMsg := CONCAT_WS('', Ported_Lines_Count, ' Ptn(s) exist(s) for Working telephone number: ', WtnIn);
+                END IF;
+            END;
+        /* For all other errors */
+        WHEN others THEN
+            IF SQLSTATE < aws_oracle_ext.get_pg_sqlstate(0) THEN
+                ErrNum := - 1;
+                ErrMsg := aws_oracle_ext.substr(SQLERRM, 1, 79);
+            END IF;
+END;
+$BODY$
+LANGUAGE  plpgsql;
+
+
+
+DROP TYPE IF EXISTS IILNP_RESALE_LNP_WTNS;
+CREATE TYPE ILNP_RESALE_LNP_WTNS AS (
+ILNP_RESALE_LNP_IND VARCHAR(50)
+);
+
+
+Wtn_Curr_Ind ILNP_RESALE_LNP_WTNS.ILNP_RESALE_LNP_IND%TYPE;
+    Wtn_NPA ILNP_PORTED_LINES.NPA_FK%TYPE;
+    Wtn_NXX ILNP_PORTED_LINES.NXX_FK%TYPE;
+    Wtn_Line ILNP_PORTED_LINES.LINE_FK%TYPE;
+	
+	
+	CREATE OR REPLACE FUNCTION npas.ilnpproc$deleteptn(
+     IN ptnin CHARACTER, 
+     INOUT errnum NUMERIC, 
+     IN wtn_ind CHARACTER, 
+     INOUT errmsg TEXT)
+AS
+$BODY$
+DECLARE
+    Wtn_Curr_Ind ILNP_RESALE_LNP_WTNS.ILNP_RESALE_LNP_IND%TYPE;
+    Wtn_NPA ILNP_PORTED_LINES.NPA_FK%TYPE;
+    Wtn_NXX ILNP_PORTED_LINES.NXX_FK%TYPE;
+    Wtn_Line ILNP_PORTED_LINES.LINE_FK%TYPE;
+    ptn_does_not_exist aws_oracle_ext.ora_exception := 'ptn_does_not_exist';
+    ptn_exists_diff_type_wtn aws_oracle_ext.ora_exception := 'ptn_exists_diff_type_wtn';
+BEGIN
+    /* Initialize all the variables */
+    ErrNum := 0;
+    ErrMsg := NULL;
+    /* Check to see if the ported telephone number passed is present */
+    /* in the ILNP_PORTED_LINES table. */
+    BEGIN
+        SELECT
+            NPA_FK, NXX_FK, LINE_FK
+            INTO STRICT Wtn_NPA, Wtn_NXX, Wtn_Line
+            FROM ILNP_PORTED_LINES
+            WHERE PTN = PtnIn;
+        EXCEPTION
+            WHEN no_data_found THEN
+                RAISE USING detail = ptn_does_not_exist, hint = 1;
+    END;
+    /* Check to see if the wtn for the ported telephone number passed is of the */
+    /* correct type. */
+    BEGIN
+        SELECT
+            ILNP_RESALE_LNP_IND
+            INTO STRICT Wtn_Curr_Ind
+            FROM ILNP_RESALE_LNP_WTNS
+            WHERE npas.npa = Wtn_NPA AND NXX = Wtn_NXX AND LINE = Wtn_Line;
+        /* if the indicators do not match then raise error for wtn exists of different type */
+        IF UPPER(Wtn_Curr_Ind::TEXT) != UPPER(Wtn_Ind) THEN
+            RAISE USING detail = ptn_exists_diff_type_wtn, hint = 1;
+        END IF;
+    END;
+
+    BEGIN
+        DELETE FROM ILNP_PORTED_LINES
+            WHERE PTN = PtnIn;
+    END;
+    /* Exception for Ptn does not exist */
+    EXCEPTION
+        WHEN raise_exception THEN
+            DECLARE
+                exc$name CHARACTER VARYING;
+                exc$code CHARACTER VARYING;
+            BEGIN
+                GET STACKED DIAGNOSTICS exc$name := pg_exception_detail,
+                    exc$code := pg_exception_hint;
+
+                IF exc$name = ptn_does_not_exist THEN
+                    ErrNum := - 2;
+                    ErrMsg := CONCAT_WS('', 'Ported telephone number: ', PtnIn, ' does not exist ');
+                END IF;
+            END;
+        /* Exception for Ptn exists for different type Wtn */
+        WHEN raise_exception THEN
+            DECLARE
+                exc$name CHARACTER VARYING;
+                exc$code CHARACTER VARYING;
+            BEGIN
+                GET STACKED DIAGNOSTICS exc$name := pg_exception_detail,
+                    exc$code := pg_exception_hint;
+
+                IF exc$name = ptn_exists_diff_type_wtn THEN
+                    ErrNum := - 3;
+                    ErrMsg := CONCAT_WS('', 'Ported telephone number: ', PtnIn, ' exists for different type Wtn ');
+                END IF;
+            END;
+        /* For all other errors */
+        WHEN others THEN
+            IF SQLSTATE < aws_oracle_ext.get_pg_sqlstate(0) THEN
+                ErrNum := - 1;
+                ErrMsg := aws_oracle_ext.substr(SQLERRM, 1, 79);
+            END IF;
+END;
+$BODY$
+LANGUAGE  plpgsql;
+
+
